@@ -1,0 +1,137 @@
+# unittest 3 for exercise on Schnorr library implementation, debug version
+# Tests private to public function to generate public key
+# E.g. to turn off debug mode: awk -M -n -f schunit3.txt -v DEBUG=0 shvec1.txt 
+# rand number generation disabled in this mode for test purposes
+#  Copyright 2019 Sheperd Systems.  See License in repository for details on usage.
+
+BEGIN{ PREC = 1500  # This will break large examples
+  if (DEBUG=="") DEBUG=1  # default to DEBUG mode
+  printro()
+      } 
+/\=/ { get_vector() ; run_unit3() }
+
+function printro() {
+   print " Unit test for Schnorr library "
+   print " Test for Schnorr and prove and verify routines "
+   print "   (See source for run_unit3 for usage) "
+   print " Test vectors read from supplied file "
+   print " Run as awk -M -n -f schunit2.txt shvec2.txt "
+   print " Hit return to continue, or CTRL-C to abort "
+   getline < "-"  # read from stdin
+}
+ 
+function run_unit3() {
+
+   dbgschnorr(tv["p"], tv["q"], tv["g"])
+   dbg_showin("p")
+   dbg_showin("q")
+   dbg_showin("g")
+   dbg_showin("x")
+   
+   print (s_t = dbgprove(tv["x"])), "Output of dbgprove() for s and t"   
+   dbg_showex("y")
+   dbg_showex("c")
+   dbg_showex("s")
+   dbg_showex("t")
+
+   print dbgverify(tv["y"],tv["s"],tv["t"])
+   dbg_showex("a")
+   dbg_showex("b")
+   }
+
+function dbgschnorr(pee,que,gee){ # create an instance to use in protocol
+    if (1 == DEBUG) print "   In dbgschnorr" 
+    pubmdls = pee
+    prvmdls = que
+    baseg   = gee 
+    if (1 == DEBUG) print "   pubmdls,prvmdls,g:",pubmdls,prvmdls,baseg
+}
+function dbgprivpub(exe) {
+    if (1 == DEBUG) print "   In dbgprivpub" 
+    wye = dbgraisepub(exe)
+    if (1 == DEBUG) print "   pub in , priv out" , exe, wye
+    return wye
+}
+
+function dbgprove(exe){
+    if (1 == DEBUG)  print "   In dbgprove" 
+    y = dbgprivpub(exe)
+
+    ## rand version disabled in this unit test
+    ##r = int(prvmdls * rand() )  # r always in [0,prvmdls]
+    ## grab test vector version of r in Test mode
+    r = tv["r"]
+
+    t = dbgraisepub(r)
+    if (1 == DEBUG)  print "   y,r,t:",y,r,t
+
+    tag = baseg "-" y "-" t 
+    
+    c = (1*SHA1(tag))  % prvmdls
+
+    s = (r + ((c*exe)%prvmdls) )% prvmdls
+    if (1 == DEBUG)  print "   c,s, tvsha:",c,s,tvsha 
+    return (s " " t) # assume s and t are numeric (no spaces)
+}
+
+function dbgverify(wye,ess,tee) {
+    if (1 == DEBUG) print "   In dbgverify" 
+    tag = baseg "-" wye "-" tee
+
+    cc = (1*SHA1(tag)) % prvmdls
+
+    if (1 == DEBUG) print "    tag, cc:", tag, cc 
+    a = dbgraisepub(ess)
+    b = (tee * expmod(wye,cc,pubmdls)) % pubmdls
+    if (1 == DEBUG)  print "    a,b:",a,b
+    if ( a == b ) {
+             if (1 == DEBUG) print "    Verify: PASS" 
+             return 1 }
+    if (1 == DEBUG)  print  "     Verify: FAIL"
+    return 0
+}
+
+function SHA1(str) { # Use external system function for hash
+   if (1 == DEBUG) print "   In SHA1" 
+   cmd = "echo -n \"" str "\" | shasum"
+   if (1 == DEBUG) print cmd
+   cmd | getline shaout
+   split(shaout,response," ") # just need first part
+   
+   if (1 == DEBUG) print "    IN, |out, |hashvalue:",str,"|" shaout, "|" response[1] 
+   # convert to hexadecimal. Run gawk with -n  or -W non-decimal-data option
+   return ("0x" response[1])
+   }
+
+function dbgraisepub(expn){ return expmod(baseg, expn, pubmdls) }
+function dbgraiseprv(expn){ return expmod(baseg, expn, prvmdls) }
+# expmod assumes integer arguments
+function expmod(bee,xp,mdl) {
+  val = 1
+  pow = bee % mdl
+  for (tmp = xp ; tmp > 0; tmp/=2) {
+     if (1 == (tmp%2)) {tmp -=1; val = (val*pow) % mdl}
+     pow = (pow*pow) % mdl }
+  return val
+}
+
+
+function dbg_showin(str) {
+   print "Test input " str " is:",tv[str] }
+function dbg_showex(str) {
+   print tv[str] " expected for " str }
+
+function get_vector() {
+    if (1== DEBUG) print "In get_vector"
+    delete tv  # clear out test data, read new block
+    tvsha = ""
+    # assumes data is in name = string format
+    # testvectors are on adjacent lines; no blank lines in vector
+    #  delimited by space
+    while ($0 ~ "="){
+          tv[$1] = $3
+          if (1 == DEBUG) print "Received " $1 " gets " $3
+          if ($1 == "c") tvsha=$5
+          if (!(0 < (getline)) ) break  
+          }
+    }
